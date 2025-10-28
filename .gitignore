@@ -1,5 +1,16 @@
+# virtualenv
 venv/
+
+# python cache
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 .pytest_cache/
+
+# macOS cruft
 .DS_Store
+
+# editor stuff
+*.swp
+*.swo
