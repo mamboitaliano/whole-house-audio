@@ -1,0 +1,28 @@
+[Unit]
+Description=Whole House Audio API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# --- YOU WILL EDIT THESE PATHS ON THE PI ---
+WorkingDirectory=/home/ubuntu/whole-house-audio
+ExecStart=/home/ubuntu/whole-house-audio/venv/bin/python /home/ubuntu/whole-house-audio/run_server.py
+
+# run as a non-root user for safety
+User=ubuntu
+Group=ubuntu
+
+# environment for the app
+Environment=PYTHONUNBUFFERED=1
+Environment=DEPLOY_SECRET=changeme
+
+# restart policy so it survives crashes
+Restart=always
+RestartSec=2
+
+# if this service spams logs we can tame it later via journald config
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
