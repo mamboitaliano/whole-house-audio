@@ -7,6 +7,7 @@ from . import mpd_control
 from . import playback
 from . import iscp
 from . import deploy
+from .helpers import announce
 
 app = Flask(__name__)
 
@@ -14,6 +15,23 @@ app = Flask(__name__)
 def status():
     st = mpd_control.get_status()
     return jsonify(st)
+
+@app.route("/announce", methods=["POST"])
+def announce_route():
+    body = request.get_json(force=True)
+    url = body.get("url")
+    volume = body.get("volume")
+    zone = body.get("zone")
+    resume = body.get("resume", True)
+
+    if not url:
+        return jsonify({"ok": False, "error": "need url"}), 400
+
+    try:
+        announce.play_announcement(url, volume, zone, resume)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/zone", methods=["POST"])
 def zone():
