@@ -117,13 +117,13 @@ def _switch_zone(zone_cfg):
 
 
 def _iscp_input_command(source):
-    """Return ISCP command string for a given source name."""
     mapping = {
-        "net": "!1SLI2B\r",
-        "bd": "!1SLI10\r",
-        "tv": "!1SLI00\r",
-        "game": "!1SLI02\r",
-        "pc": "!1SLI05\r",
-        "aux": "!1SLI03\r",
+        "net":  "2B",  # NET
+        "bd":   "10",  # BD/DVD
+        "tv":   "00",  # TV
+        "game": "02",  # GAME
+        "pc":   "05",  # PC
+        "aux":  "03",  # AUX
     }
-    return mapping.get(source.lower(), "!1SLI2B\r")
+    code = mapping.get(source.lower(), "2B")
+    return f"!1SLI{code}\r"
