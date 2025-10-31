@@ -56,31 +56,31 @@ class EISCPClient:
         z = str(zone)
         if z == "1":
             return {
-                "PWR": "PWR",  "PWRQ": "PWRQ",
-                "MVL": "MVL",  "MVLQ": "MVLQ",
-                "SLI": "SLI",  "SLIQ": "SLIQ",
-                "AMT": "AMT",
+                "PWR":  "PWR",   "PWRQ":  "PWRQSTN",
+                "MVL":  "MVL",   "MVLQ":  "MVLQSTN",
+                "SLI":  "SLI",   "SLIQ":  "SLIQSTN",
+                "AMT":  "AMT",
             }
         if z == "2":
             return {
-                "PWR": "ZPW",  "PWRQ": "ZPWQ",
-                "MVL": "ZVL",  "MVLQ": "ZVLQ",
-                "SLI": "SLZ",  "SLIQ": "SLZQ",
-                "AMT": "ZMT",
+                "PWR":  "ZPW",   "PWRQ":  "ZPWQSTN",
+                "MVL":  "ZVL",   "MVLQ":  "ZVLQSTN",
+                "SLI":  "SLZ",   "SLIQ":  "SLZQSTN",
+                "AMT":  "ZMT",
             }
         if z == "3":
             return {
-                "PWR": "PW3",  "PWRQ": "PW3Q",
-                "MVL": "VL3",  "MVLQ": "VL3Q",
-                "SLI": "SL3",  "SLIQ": "SL3Q",
-                "AMT": "MT3",
+                "PWR":  "PW3",   "PWRQ":  "PW3QSTN",
+                "MVL":  "VL3",   "MVLQ":  "VL3QSTN",
+                "SLI":  "SL3",   "SLIQ":  "SL3QSTN",
+                "AMT":  "MT3",
             }
-        # Fallback to main zone semantics
+        # fallback to main
         return {
-            "PWR": "PWR",  "PWRQ": "PWRQ",
-            "MVL": "MVL",  "MVLQ": "MVLQ",
-            "SLI": "SLI",  "SLIQ": "SLIQ",
-            "AMT": "AMT",
+            "PWR":  "PWR",   "PWRQ":  "PWRQSTN",
+            "MVL":  "MVL",   "MVLQ":  "MVLQSTN",
+            "SLI":  "SLI",   "SLIQ":  "SLIQSTN",
+            "AMT":  "AMT",
         }
 
     def power(self, on: bool, zone: str = "1"):
