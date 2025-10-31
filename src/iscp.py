@@ -1,6 +1,7 @@
 # src/iscp.py
 import socket
 from typing import Optional, Tuple
+import time
 
 ISCP_MAGIC = b"ISCP"
 ISCP_VER = 0x01
@@ -37,31 +38,42 @@ class EISCPClient:
         self.timeout = timeout
 
     def _read_frame(self, s) -> str:
-        """Read exactly one eISCP frame from the socket and return ASCII payload w/o CR."""
-        # Read header (16 bytes)
-        hdr = b""
-        while len(hdr) < 16:
-            chunk = s.recv(16 - len(hdr))
+        """Read one eISCP frame; tolerate when recv() returns header+payload at once."""
+        buf = b""
+        # Read header (16 bytes), but allow over-read
+        while len(buf) < 16:
+            chunk = s.recv(16 - len(buf))
             if not chunk:
                 return ""
-            hdr += chunk
+            buf += chunk
+
+        hdr = buf[:16]
+        leftover = buf[16:]
+
         if hdr[:4] != ISCP_MAGIC:
             return ""
+
         data_len = int.from_bytes(hdr[8:12], "big")
 
-        # Read payload (data_len bytes)
-        data = b""
+        # Start payload with any leftover from the header read
+        data = leftover
         while len(data) < data_len:
             chunk = s.recv(data_len - len(data))
             if not chunk:
                 break
             data += chunk
+
         if data.endswith(CR):
             data = data[:-1]
+
         try:
             return data.decode("ascii", errors="ignore")
         except Exception:
             return ""
+        
+    def transact(self, ascii_cmd: str) -> str:
+        """Back-compat shim for tests and callers that expect transact()."""
+        return self._transact(ascii_cmd)
 
     def _transact(self, ascii_cmd: str, expect_prefix: str = None, read_window_s: float = 0.35) -> str:
         """
