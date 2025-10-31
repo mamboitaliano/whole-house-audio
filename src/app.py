@@ -101,36 +101,66 @@ def deploy_route():
 @app.route("/zones/debug", methods=["GET"])
 def zones_debug():
     """
-    Returns the current input, volume, and power status for each zone.
-    Reads zone definitions from config/zones.yaml.
+    Return current input, volume, and power status for each zone in a readable form.
     """
     from .helpers import announce
     from . import iscp
-    import os
+    import os, re
 
     ip = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
     client = iscp.EISCPClient(ip)
     zones = announce.load_zones() or {}
-    out = {}
+    results = {}
+
+    def parse_power(raw):
+        if not raw:
+            return "unknown"
+        return "on" if raw.endswith("01") else "off" if raw.endswith("00") else raw
+
+    def parse_volume(raw):
+        if not raw:
+            return None
+        # last two hex digits -> 0–100 scale (00–64)
+        m = re.search(r"([0-9A-F]{2})$", raw)
+        if not m:
+            return None
+        val = int(m.group(1), 16)
+        pct = round(val * 100 / 100) if val <= 100 else val
+        return pct
+
+    def parse_input(raw):
+        if not raw:
+            return None
+        code = raw[-2:].upper()
+        mapping = {
+            "00": "TV",
+            "02": "GAME",
+            "03": "AUX",
+            "05": "PC",
+            "10": "BD/DVD",
+            "2B": "NET",
+        }
+        return mapping.get(code, code)
 
     for name, cfg in zones.items():
         zid = str(cfg.get("zone_id", "1"))
         try:
-            # Query per-zone power/input/volume
-            pwr = client.power_query(zid)
-            vol = client.volume_query(zid)
-            # Query current input (handles zone-specific codes)
-            inp = client.transact(f"!{zid}{('SLIQ' if zid=='1' else ('SLZQ' if zid=='2' else 'SL3Q'))}")
-            out[name] = {
+            pwr_raw = client.power_query(zid)
+            vol_raw = client.volume_query(zid)
+            inp_raw = client.transact(
+                f"!{zid}{('SLIQ' if zid=='1' else ('SLZQ' if zid=='2' else 'SL3Q'))}"
+            )
+
+            results[name] = {
                 "zone_id": zid,
-                "power": pwr,
-                "volume": vol,
-                "input": inp,
+                "power": parse_power(pwr_raw),
+                "volume": parse_volume(vol_raw),
+                "input": parse_input(inp_raw),
             }
         except Exception as e:
-            out[name] = {"zone_id": zid, "error": str(e)}
+            results[name] = {"zone_id": zid, "error": str(e)}
 
-    return jsonify(out)
+    return jsonify(results)
 
 if __name__ == "__main__":
     # local dev runner
