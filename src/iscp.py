@@ -36,18 +36,69 @@ class EISCPClient:
         self.port = port
         self.timeout = timeout
 
-    def transact(self, ascii_cmd: str) -> Optional[str]:
+    def _read_frame(self, s) -> str:
+        """Read exactly one eISCP frame from the socket and return ASCII payload w/o CR."""
+        # Read header (16 bytes)
+        hdr = b""
+        while len(hdr) < 16:
+            chunk = s.recv(16 - len(hdr))
+            if not chunk:
+                return ""
+            hdr += chunk
+        if hdr[:4] != ISCP_MAGIC:
+            return ""
+        data_len = int.from_bytes(hdr[8:12], "big")
+
+        # Read payload (data_len bytes)
+        data = b""
+        while len(data) < data_len:
+            chunk = s.recv(data_len - len(data))
+            if not chunk:
+                break
+            data += chunk
+        if data.endswith(CR):
+            data = data[:-1]
+        try:
+            return data.decode("ascii", errors="ignore")
+        except Exception:
+            return ""
+
+    def _transact(self, ascii_cmd: str, expect_prefix: str = None, read_window_s: float = 0.35) -> str:
+        """
+        Send ascii_cmd and read frames for a short window, returning:
+          - the first frame that starts with expect_prefix (if provided), else
+          - the first non-empty frame, else empty string.
+        """
         pkt = _pack(ascii_cmd)
         with socket.create_connection((self.host, self.port), timeout=self.timeout) as s:
             s.settimeout(self.timeout)
             s.sendall(pkt)
-            try:
-                buf = s.recv(4096)
-                if not buf:
-                    return None
-                return _unpack(buf)
-            except socket.timeout:
-                return None
+
+            deadline = time.time() + read_window_s
+            first_nonempty = ""
+            matched = ""
+
+            while time.time() < deadline:
+                try:
+                    # Use short per-read timeout to allow multiple frames
+                    s.settimeout(0.12)
+                    frame = self._read_frame(s)
+                    if not frame:
+                        # no more data for now; small sleep to wait for the next frame burst
+                        time.sleep(0.02)
+                        continue
+                    if not first_nonempty:
+                        first_nonempty = frame
+                    if expect_prefix and frame.startswith(expect_prefix):
+                        matched = frame
+                        break
+                except socket.timeout:
+                    # brief idle; keep looping until deadline
+                    continue
+                except Exception:
+                    break
+
+            return matched or first_nonempty
 
     # ----- Zone-aware helpers (Onkyo/Integra pattern: main vs Z2 vs Z3)
     # Main: PWR/MVL/SLI/AMT ; Zone2: ZPW/ZVL/SLZ/ZMT ; Zone3: PW3/VL3/SL3/MT3
@@ -85,31 +136,31 @@ class EISCPClient:
 
     def power(self, on: bool, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['PWR']}{'01' if on else '00'}")
+        return self._transact(f"!1{c['PWR']}{'01' if on else '00'}", expect_prefix=f"!1{c['PWR']}")
 
     def power_query(self, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['PWRQ']}")
+        return self._transact(f"!1{c['PWRQ']}", expect_prefix=f"!1{c['PWR']}")
 
     def volume_hex(self, hex_00_64: str, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['MVL']}{hex_00_64.upper()}")
+        return self._transact(f"!1{c['MVL']}{hex_00_64.upper()}", expect_prefix=f"!1{c['MVL']}")
 
     def volume_query(self, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['MVLQ']}")
+        return self._transact(f"!1{c['MVLQ']}", expect_prefix=f"!1{c['MVL']}")
 
     def mute(self, on: bool, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['AMT']}{'01' if on else '00'}")
+        return self._transact(f"!1{c['AMT']}{'01' if on else '00'}", expect_prefix=f"!1{c['AMT']}")
 
     def input_select(self, sli_code_hex: str, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['SLI']}{sli_code_hex.upper()}")
+        return self._transact(f"!1{c['SLI']}{sli_code_hex.upper()}", expect_prefix=f"!1{c['SLI']}")
 
     def input_query(self, zone: str = "1"):
         c = self._cmds(zone)
-        return self.transact(f"!1{c['SLIQ']}")
+        return self._transact(f"!1{c['SLIQ']}", expect_prefix=f"!1{c['SLI']}")
 
 # Back-compat legacy API used by your routes/tests
 def send_iscp(ip: str, payload: str) -> Tuple[int, str, str]:
