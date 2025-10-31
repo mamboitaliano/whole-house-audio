@@ -2,6 +2,8 @@ import json
 import os
 from src.app import app
 
+os.environ.setdefault("HOUSEAUDIO_SKIP_STARTUP", "1")
+
 def test_zone_uses_default_receiver_ip(monkeypatch, mocker):
     # ensure env default for this test
     monkeypatch.setenv("DEFAULT_RECEIVER_IP", "192.168.50.249")

@@ -15,6 +15,7 @@ DEFAULT_RECEIVER_IP = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
 
 def _startup_zone_validation():
     """Load zones.yaml and log which receivers respond on 60128."""
+    
     try:
         zones = announce.load_zones() or {}
         if not zones:
@@ -34,7 +35,8 @@ def _startup_zone_validation():
     except Exception as e:
         print(f"[startup] zones validation error: {e}")
 
-_startup_zone_validation()
+if os.environ.get("HOUSEAUDIO_SKIP_STARTUP") != "1":
+    _startup_zone_validation()
 
 @app.route("/status", methods=["GET"])
 def status():
