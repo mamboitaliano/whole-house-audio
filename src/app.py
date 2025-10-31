@@ -98,6 +98,40 @@ def deploy_route():
     result = deploy.do_deploy()
     return jsonify(result)
 
+@app.route("/zones/debug", methods=["GET"])
+def zones_debug():
+    """
+    Returns the current input, volume, and power status for each zone.
+    Reads zone definitions from config/zones.yaml.
+    """
+    from .helpers import announce
+    from . import iscp
+    import os
+
+    ip = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
+    client = iscp.EISCPClient(ip)
+    zones = announce.load_zones() or {}
+    out = {}
+
+    for name, cfg in zones.items():
+        zid = str(cfg.get("zone_id", "1"))
+        try:
+            # Query per-zone power/input/volume
+            pwr = client.power_query(zid)
+            vol = client.volume_query(zid)
+            # Query current input (handles zone-specific codes)
+            inp = client.transact(f"!{zid}{('SLIQ' if zid=='1' else ('SLZQ' if zid=='2' else 'SL3Q'))}")
+            out[name] = {
+                "zone_id": zid,
+                "power": pwr,
+                "volume": vol,
+                "input": inp,
+            }
+        except Exception as e:
+            out[name] = {"zone_id": zid, "error": str(e)}
+
+    return jsonify(out)
+
 if __name__ == "__main__":
     # local dev runner
     app.run(host="0.0.0.0", port=5001, debug=True)
