@@ -1,129 +1,72 @@
-import subprocess
-import time
-import yaml
-import os
+# src/helpers/announce.py
+import subprocess, time, os, yaml
+from .. import iscp
 
-from .. import mpd_control, iscp
-
-
-# Path to the zone configuration file
-CONFIG_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "config", "zones.yaml"
-)
-
+CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "config", "zones.yaml")
 
 def load_zones():
-    """Load zone map from YAML file."""
     try:
         with open(CONFIG_PATH, "r") as f:
-            data = yaml.safe_load(f)
+            data = yaml.safe_load(f) or {}
         return data.get("zones", {})
-    except FileNotFoundError:
-        return {}
     except Exception as e:
-        print(f"[announce] Error loading config: {e}")
+        print(f"[announce] zones load error: {e}")
         return {}
 
+def _hex_from_percent(p): p = max(0, min(100, int(p))); return f"{p:02X}"
+def _mpc(*args): return subprocess.run(["mpc", *args], check=False)
 
-def play_announcement(url, volume=None, zone=None, resume=True):
-    """
-    Play a temporary announcement.
+def _mpc_status_text():
+    p = subprocess.Popen(["mpc", "status"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    out, _ = p.communicate()
+    return out or ""
 
-    Args:
-        url (str): The audio URL or file path.
-        volume (int, optional): Volume (0–100).
-        zone (str, optional): Named zone to temporarily switch to.
-        resume (bool): Whether to resume playback afterward.
-    """
+def _wait_mpc_stop(max_s=60):
+    end = time.time() + max_s
+    while time.time() < end:
+        if "[playing]" not in _mpc_status_text():
+            return
+        time.sleep(0.2)
 
+def play_zone_announcement(zone_name: str, volume_pct: int, file_url: str):
     zones = load_zones()
-    target_zone = zones.get(zone) if zone else None
+    if zone_name not in zones:
+        raise ValueError(f"unknown zone '{zone_name}'")
+    cfg = zones[zone_name] or {}
+    zone_id = str(cfg.get("zone_id", "1"))
+    ann_sli = str(cfg.get("sli", "2B")).upper()
 
-    # Capture current state
-    status = mpd_control.get_status()
-    was_playing = status.get("state") == "play"
-    current_song = status.get("file")
+    # single-receiver deployment: IP from env or hardcoded in systemd
+    ip = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
+    cli = iscp.EISCPClient(ip)
 
-    print(f"[announce] Starting announcement: url={url}, zone={zone}, resume={resume}")
+    # Ensure power for this zone
+    cli.power(True, zone=zone_id); time.sleep(0.1)
 
-    # Optional: handle zone switching
-    prev_zone = None
-    if target_zone:
-        prev_zone = _detect_active_zone(zones)
-        _switch_zone(target_zone)
+    # Snapshot this zone's input & volume
+    prev_in = cli.transact(f"!{zone_id}{('SLIQ' if zone_id=='1' else ('SLZQ' if zone_id=='2' else 'SL3Q'))}") or ""
+    prev_v  = cli.volume_query(zone=zone_id) or ""
+    prev_hex = prev_v[-2:] if len(prev_v) >= 2 else "32"
+    was_on_ann_input = prev_in.endswith(ann_sli)
 
-    # Pause current music
-    if was_playing:
-        mpd_control.pause()
+    # Switch only this zone to the announcement input and set volume
+    cli.input_select(ann_sli, zone=zone_id); time.sleep(0.08)
+    cli.volume_hex(_hex_from_percent(volume_pct), zone=zone_id); time.sleep(0.05)
 
-    # Adjust volume if requested
-    if volume is not None:
-        subprocess.run(["mpc", "volume", str(volume)], check=False)
+    muted = False
+    if was_on_ann_input:
+        cli.mute(True, zone=zone_id); muted = True; time.sleep(0.05)
 
-    # Play the announcement
-    subprocess.run(["mpc", "clear"], check=False)
-    subprocess.run(["mpc", "add", url], check=False)
-    subprocess.run(["mpc", "play"], check=False)
+    # Play the URL (Pi/MPD is the shared source)
+    _mpc("clear"); _mpc("add", file_url); _mpc("play")
+    _wait_mpc_stop(max_s=120)
 
-    # Wait for playback to end
-    _wait_for_stop()
+    if muted:
+        cli.mute(False, zone=zone_id); time.sleep(0.05)
 
-    # Resume previous song if needed
-    if resume and was_playing and current_song:
-        print("[announce] Resuming previous playback")
-        subprocess.run(["mpc", "clear"], check=False)
-        subprocess.run(["mpc", "add", current_song], check=False)
-        subprocess.run(["mpc", "play"], check=False)
-
-    # Switch back to previous zone if changed
-    if target_zone and prev_zone:
-        _switch_zone(prev_zone)
-
-    print("[announce] Done.")
-
-
-# --- Internal helpers ---------------------------------------------------------
-
-
-def _wait_for_stop():
-    """Block until MPD playback stops."""
-    while True:
-        st = mpd_control.get_status()
-        if st.get("state") != "play":
-            break
-        time.sleep(1)
-
-
-def _detect_active_zone(zones):
-    """(Future enhancement) Detect which receiver is currently active."""
-    # For now, just return the first zone (you could ping receivers or query state)
-    return next(iter(zones.values()), None)
-
-
-def _switch_zone(zone_cfg):
-    """Send ISCP command to switch receiver input."""
-    ip = zone_cfg.get("receiver_ip")
-    input_src = zone_cfg.get("input", "net")
-
-    if not ip:
-        print("[announce] No receiver_ip in zone config, skipping zone switch")
-        return
-
-    print(f"[announce] Switching receiver {ip} to input '{input_src}'")
-    cmd = _iscp_input_command(input_src)
-    rc, out, err = iscp.send_iscp(ip, cmd)
-    if rc != 0:
-        print(f"[announce] ISCP switch failed: {err}")
-
-
-def _iscp_input_command(source):
-    mapping = {
-        "net":  "2B",  # NET
-        "bd":   "10",  # BD/DVD
-        "tv":   "00",  # TV
-        "game": "02",  # GAME
-        "pc":   "05",  # PC
-        "aux":  "03",  # AUX
-    }
-    code = mapping.get(source.lower(), "2B")
-    return f"!1SLI{code}\r"
+    # Restore this zone's previous input & volume
+    prev_sli = prev_in[-2:].upper() if len(prev_in) >= 2 else None
+    if prev_sli and all(c in "0123456789ABCDEF" for c in prev_sli):
+        cli.input_select(prev_sli, zone=zone_id); time.sleep(0.05)
+    if prev_hex and all(c in "0123456789ABCDEF" for c in prev_hex.upper()):
+        cli.volume_hex(prev_hex.upper(), zone=zone_id)

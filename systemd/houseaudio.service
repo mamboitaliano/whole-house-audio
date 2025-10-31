@@ -15,6 +15,7 @@ Group=ubuntu
 # environment for the app
 Environment=PYTHONUNBUFFERED=1
 Environment=DEPLOY_SECRET=changeme
+Environment=DEFAULT_RECEIVER_IP=192.168.50.249
 
 # restart policy so it survives crashes
 Restart=always

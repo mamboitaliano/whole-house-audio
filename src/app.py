@@ -2,14 +2,39 @@
 
 from flask import Flask, jsonify, request
 import os
+import socket
 
-from . import mpd_control
-from . import playback
-from . import iscp
+from . import mpd_control, playback, iscp
 from . import deploy
 from .helpers import announce
 
 app = Flask(__name__)
+
+# default receiver if /zone omits receiver_ip
+DEFAULT_RECEIVER_IP = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
+
+def _startup_zone_validation():
+    """Load zones.yaml and log which receivers respond on 60128."""
+    try:
+        zones = announce.load_zones() or {}
+        if not zones:
+            print("[startup] zones.yaml: no zones configured")
+            return
+        print(f"[startup] zones.yaml loaded: {list(zones.keys())}")
+        for name, cfg in zones.items():
+            ip = (cfg or {}).get("receiver_ip")
+            if not ip:
+                print(f"[startup] zone '{name}': no receiver_ip set")
+                continue
+            try:
+                with socket.create_connection((ip, 60128), timeout=0.35):
+                    print(f"[startup] zone '{name}': {ip} reachable on 60128")
+            except Exception as e:
+                print(f"[startup] zone '{name}': {ip} NOT reachable (60128) — {e}")
+    except Exception as e:
+        print(f"[startup] zones validation error: {e}")
+
+_startup_zone_validation()
 
 @app.route("/status", methods=["GET"])
 def status():
@@ -19,16 +44,20 @@ def status():
 @app.route("/announce", methods=["POST"])
 def announce_route():
     body = request.get_json(force=True)
-    url = body.get("url")
-    volume = body.get("volume")
-    zone = body.get("zone")
-    resume = body.get("resume", True)
+    zone_name = body.get("zone")
+    volume = body.get("volume")          # int 0..100
+    file_url = body.get("file")
 
-    if not url:
-        return jsonify({"ok": False, "error": "need url"}), 400
+    if not zone_name:
+        return jsonify({"ok": False, "error": "missing 'zone'"}), 400
+    if volume is None:
+        return jsonify({"ok": False, "error": "missing 'volume'"}), 400
+    if not file_url or not str(file_url).lower().startswith(("http://", "https://")):
+        return jsonify({"ok": False, "error": "need http(s) 'file' URL"}), 400
 
     try:
-        announce.play_announcement(url, volume, zone, resume)
+        from .helpers import announce
+        announce.play_zone_announcement(zone_name, int(volume), file_url)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -36,11 +65,13 @@ def announce_route():
 @app.route("/zone", methods=["POST"])
 def zone():
     body = request.get_json(force=True)
-    ip = body.get("receiver_ip")
+    ip = body.get("receiver_ip") or DEFAULT_RECEIVER_IP
     power = body.get("power")
 
-    if not ip or power not in ["on", "off"]:
-        return jsonify({"ok": False, "error": "need receiver_ip and power=on|off"}), 400
+    if power not in ["on", "off"]:
+        return jsonify({"ok": False, "error": "need power=on|off"}), 400
+    if not ip:
+        return jsonify({"ok": False, "error": "receiver_ip missing and DEFAULT_RECEIVER_IP not set"}), 400
 
     cmd = "!1PWR01\r" if power == "on" else "!1PWR00\r"
     rc, out, err = iscp.send_iscp(ip, cmd)

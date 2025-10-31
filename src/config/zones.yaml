@@ -1,7 +1,11 @@
+# config/zones.yaml
 zones:
   inside:
-    receiver_ip: 192.168.50.78
-    input: net
-  patio:
-    receiver_ip: 192.168.50.249
-    input: net
+    zone_id: "1"
+    sli: "2B"
+  front_patio:
+    zone_id: "2"
+    sli: "2B"
+  back_patio:
+    zone_id: "3"
+    sli: "2B"
