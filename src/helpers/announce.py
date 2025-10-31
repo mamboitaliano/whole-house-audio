@@ -44,8 +44,8 @@ def play_zone_announcement(zone_name: str, volume_pct: int, file_url: str):
     cli.power(True, zone=zone_id); time.sleep(0.1)
 
     # Snapshot this zone's input & volume
-    prev_in = cli.transact(f"!{zone_id}{('SLIQ' if zone_id=='1' else ('SLZQ' if zone_id=='2' else 'SL3Q'))}") or ""
-    prev_v  = cli.volume_query(zone=zone_id) or ""
+    prev_in  = cli.input_query(zone_id) or ""
+    prev_v   = cli.volume_query(zone_id) or ""
     prev_hex = prev_v[-2:] if len(prev_v) >= 2 else "32"
     was_on_ann_input = prev_in.endswith(ann_sli)
 

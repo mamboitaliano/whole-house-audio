@@ -51,41 +51,65 @@ class EISCPClient:
 
     # ----- Zone-aware helpers (Onkyo/Integra pattern: main vs Z2 vs Z3)
     # Main: PWR/MVL/SLI/AMT ; Zone2: ZPW/ZVL/SLZ/ZMT ; Zone3: PW3/VL3/SL3/MT3
-    def _prefixes(self, zone: str):
+    def _cmds(self, zone: str):
+        """Return the correct command names for the given zone."""
         z = str(zone)
         if z == "1":
-            return ("PWR", "MVL", "SLI", "AMT", "PWRQ", "MVLQ", "SLIQ")
+            return {
+                "PWR": "PWR",  "PWRQ": "PWRQ",
+                "MVL": "MVL",  "MVLQ": "MVLQ",
+                "SLI": "SLI",  "SLIQ": "SLIQ",
+                "AMT": "AMT",
+            }
         if z == "2":
-            return ("ZPW", "ZVL", "SLZ", "ZMT", "ZPWQ", "ZVLQ", "SLZQ")
+            return {
+                "PWR": "ZPW",  "PWRQ": "ZPWQ",
+                "MVL": "ZVL",  "MVLQ": "ZVLQ",
+                "SLI": "SLZ",  "SLIQ": "SLZQ",
+                "AMT": "ZMT",
+            }
         if z == "3":
-            return ("PW3", "VL3", "SL3", "MT3", "PW3Q", "VL3Q", "SL3Q")
-        # fallback: treat as main
-        return ("PWR", "MVL", "SLI", "AMT", "PWRQ", "MVLQ", "SLIQ")
+            return {
+                "PWR": "PW3",  "PWRQ": "PW3Q",
+                "MVL": "VL3",  "MVLQ": "VL3Q",
+                "SLI": "SL3",  "SLIQ": "SL3Q",
+                "AMT": "MT3",
+            }
+        # Fallback to main zone semantics
+        return {
+            "PWR": "PWR",  "PWRQ": "PWRQ",
+            "MVL": "MVL",  "MVLQ": "MVLQ",
+            "SLI": "SLI",  "SLIQ": "SLIQ",
+            "AMT": "AMT",
+        }
 
-    def power(self, on: bool, zone: str = "1"):        # on/off
-        PWR, *_ = self._prefixes(zone)
-        return self.transact(f"!{zone}{PWR}{'01' if on else '00'}")
+    def power(self, on: bool, zone: str = "1"):
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['PWR']}{'01' if on else '00'}")
 
     def power_query(self, zone: str = "1"):
-        *_, PWRQ, _, _ = self._prefixes(zone)
-        # PWRQ symbol is in the tuple above at index 4
-        return self.transact(f"!{zone}{PWRQ}")
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['PWRQ']}")
 
     def volume_hex(self, hex_00_64: str, zone: str = "1"):
-        _, MVL, *_ = self._prefixes(zone)
-        return self.transact(f"!{zone}{MVL}{hex_00_64.upper()}")
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['MVL']}{hex_00_64.upper()}")
 
     def volume_query(self, zone: str = "1"):
-        *_, _, MVLQ, _ = self._prefixes(zone)
-        return self.transact(f"!{zone}{MVLQ}")
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['MVLQ']}")
 
     def mute(self, on: bool, zone: str = "1"):
-        *_, AMT, _, _, _ = self._prefixes(zone)
-        return self.transact(f"!{zone}{AMT}{'01' if on else '00'}")
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['AMT']}{'01' if on else '00'}")
 
     def input_select(self, sli_code_hex: str, zone: str = "1"):
-        *_, _, _, SLI = self._prefixes(zone)
-        return self.transact(f"!{zone}{SLI}{sli_code_hex.upper()}")
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['SLI']}{sli_code_hex.upper()}")
+
+    def input_query(self, zone: str = "1"):
+        c = self._cmds(zone)
+        return self.transact(f"!1{c['SLIQ']}")
 
 # Back-compat legacy API used by your routes/tests
 def send_iscp(ip: str, payload: str) -> Tuple[int, str, str]:

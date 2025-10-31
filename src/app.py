@@ -147,9 +147,7 @@ def zones_debug():
         try:
             pwr_raw = client.power_query(zid)
             vol_raw = client.volume_query(zid)
-            inp_raw = client.transact(
-                f"!{zid}{('SLIQ' if zid=='1' else ('SLZQ' if zid=='2' else 'SL3Q'))}"
-            )
+            inp_raw = client.input_query(zid)
 
             results[name] = {
                 "zone_id": zid,
