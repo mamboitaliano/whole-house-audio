@@ -1,11 +1,5 @@
 # config/zones.yaml
 zones:
-  inside:
-    zone_id: "1"
-    sli: "2B"
-  front_patio:
-    zone_id: "2"
-    sli: "2B"
-  back_patio:
-    zone_id: "3"
-    sli: "2B"
+  inside:       { zone_id: "1", sli: "2B" }  # main can use NET
+  front_patio:  { zone_id: "2", sli: "03" }  # AUX (or "05" = PC)
+  back_patio:   { zone_id: "3", sli: "03" }

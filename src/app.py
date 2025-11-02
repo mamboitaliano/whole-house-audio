@@ -14,26 +14,12 @@ app = Flask(__name__)
 DEFAULT_RECEIVER_IP = os.environ.get("DEFAULT_RECEIVER_IP", "192.168.50.249")
 
 def _startup_zone_validation():
-    """Load zones.yaml and log which receivers respond on 60128."""
-    
+    ip = DEFAULT_RECEIVER_IP
     try:
-        zones = announce.load_zones() or {}
-        if not zones:
-            print("[startup] zones.yaml: no zones configured")
-            return
-        print(f"[startup] zones.yaml loaded: {list(zones.keys())}")
-        for name, cfg in zones.items():
-            ip = (cfg or {}).get("receiver_ip")
-            if not ip:
-                print(f"[startup] zone '{name}': no receiver_ip set")
-                continue
-            try:
-                with socket.create_connection((ip, 60128), timeout=0.35):
-                    print(f"[startup] zone '{name}': {ip} reachable on 60128")
-            except Exception as e:
-                print(f"[startup] zone '{name}': {ip} NOT reachable (60128) — {e}")
+        with socket.create_connection((ip, 60128), timeout=0.35):
+            print(f"[startup] receiver {ip} reachable on 60128")
     except Exception as e:
-        print(f"[startup] zones validation error: {e}")
+        print(f"[startup] receiver {ip} NOT reachable (60128) — {e}")
 
 if os.environ.get("HOUSEAUDIO_SKIP_STARTUP") != "1":
     _startup_zone_validation()
@@ -67,24 +53,19 @@ def announce_route():
 @app.route("/zone", methods=["POST"])
 def zone():
     body = request.get_json(force=True)
-    ip = body.get("receiver_ip") or DEFAULT_RECEIVER_IP
-    power = body.get("power")
+    power = body.get("power")  # "on" | "off"
 
     if power not in ["on", "off"]:
         return jsonify({"ok": False, "error": "need power=on|off"}), 400
-    if not ip:
-        return jsonify({"ok": False, "error": "receiver_ip missing and DEFAULT_RECEIVER_IP not set"}), 400
 
-    cmd = "!1PWR01\r" if power == "on" else "!1PWR00\r"
-    rc, out, err = iscp.send_iscp(ip, cmd)
+    client = iscp.EISCPClient(DEFAULT_RECEIVER_IP)
+    resp = client.power(power == "on", zone="1")  # main zone power
 
     return jsonify({
-        "ok": (rc == 0),
-        "sent": cmd.strip(),
-        "rc": rc,
-        "stdout": out,
-        "stderr": err
-    }), (200 if rc == 0 else 500)
+        "ok": bool(resp and resp.startswith("!1PWR")),
+        "sent": f"!1PWR{'01' if power == 'on' else '00'}",
+        "stdout": resp or "",
+    }), 200
 
 @app.route("/deploy", methods=["POST"])
 def deploy_route():

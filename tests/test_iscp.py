@@ -23,11 +23,3 @@ def test_transact_packs_and_handles_response(mocker):
     cli = iscp.EISCPClient("192.0.2.10", 60128, timeout=0.1)
     out = cli.transact("!1PWRQ")
     assert out == "!1PWR01"
-
-def test_send_iscp_shim_ok(mocker):
-    # Ensure legacy API returns rc=0 on success path
-    mocker.patch.object(iscp.EISCPClient, "transact", return_value="!1PWR01")
-    rc, out, err = iscp.send_iscp("192.0.2.10", "!1PWRQ\r")
-    assert rc == 0
-    assert out == "!1PWR01"
-    assert err == ""
